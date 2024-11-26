@@ -1,0 +1,41 @@
+{
+  "name": "ken-copilot",
+  "version": "0.0.1",
+  "description": "Your Copilot",
+  "main": "index.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --publish never"
+  },
+  "build": {
+    "asar": false,
+    "linux": {
+      "target": [
+        "snap"
+      ],
+      "category": "Utility",
+      "artifactName": "${name}_${version}_linux.${ext}"
+    },
+    "snap": {
+      "plugs": [
+        "audio-record"
+      ]
+    },
+    "extraFiles": [
+      "com.github.kenvandine.${name}.desktop"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kenvandine/ken-copilot.git"
+  },
+  "author": "Ken VanDine",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/kenvandine/ken-copilot/issues"
+  },
+  "homepage": "https://github.com/kenvandine/ken-copilot#readme",
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
