@@ -14,11 +14,13 @@ parts:
   ken-copilot:
     plugin: dump
     source: dist
-    override-pull: |
+    override-build: |
       craftctl default
-      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.ken-copilot.desktop $SNAPCRAFT_PART_SRC/linux-unpacked/
+      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.ken-copilot.desktop $SNAPCRAFT_PART_INSTALL/linux-unpacked/
+      cp $SNAPCRAFT_PROJECT_DIR/icon.png $SNAPCRAFT_PART_INSTALL/
     prime:
       - linux-unpacked
+      - icon.png
       - -*/chrome-sandbox
       - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/lib
       - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/include
