@@ -1,0 +1,52 @@
+name: ken-copilot
+version: 0.0.1
+summary: Ken's Copilot
+description: Web app for Copilot
+grade: stable
+confinement: strict
+base: core24
+
+platforms:
+  amd64:
+compression: lzo
+
+parts:
+  ken-copilot:
+    plugin: dump
+    source: dist
+    override-pull: |
+      craftctl default
+      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.ken-copilot.desktop $SNAPCRAFT_PART_SRC/linux-unpacked/
+    prime:
+      - linux-unpacked
+      - -*/chrome-sandbox
+      - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/lib
+      - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/include
+
+  cleanup:
+    after: [ ken-copilot ]
+    plugin: nil
+    build-snaps: [ gnome-46-2404 ]
+    override-prime: |
+        set -eux
+        cd /snap/gnome-46-2404/current
+        find . -type f,l -exec rm -f $SNAPCRAFT_PRIME/{} \;
+
+plugs:
+  shmem:
+    interface: shared-memory
+    private: true
+
+apps:
+  ken-copilot:
+    extensions: [gnome]
+    desktop: linux-unpacked/com.github.kenvandine.ken-copilot.desktop
+    command: linux-unpacked/ken-copilot --use-tray-icon --no-sandbox --disable-seccomp-filter-sandbox
+    plugs:
+      - shmem
+      - network
+      - audio-playback
+      - audio-record
+    environment:
+      GTK_USE_PORTAL: "1"
+      TMPDIR: $XDG_RUNTIME_DIR
