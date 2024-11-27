@@ -1,7 +1,7 @@
 [Desktop Entry]
 Encoding=UTF-8
-Name=Ken's Copilot
-Comment=Web app for Copilot
+Name=Copilot
+Comment=Copilot AI Companion
 Type=Application
 Exec=ken-copilot
 Icon=${SNAP}/unpacked/resources/app/icon.png
