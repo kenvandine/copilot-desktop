@@ -11,15 +11,10 @@
     "asar": false,
     "linux": {
       "target": [
-        "snap"
+	      "dir"
       ],
       "category": "Utility",
       "artifactName": "${name}_${version}_linux.${ext}"
-    },
-    "snap": {
-      "plugs": [
-        "audio-record"
-      ]
     },
     "extraFiles": [
       "com.github.kenvandine.${name}.desktop"
@@ -38,7 +33,6 @@
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
-    "electron-installer-snap": "^5.2.0",
     "electron-package": "^0.1.0"
   }
 }

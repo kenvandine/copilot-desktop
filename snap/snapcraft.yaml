@@ -8,18 +8,24 @@ base: core24
 
 platforms:
   amd64:
+  arm64:
 compression: lzo
 
 parts:
   ken-copilot:
-    plugin: dump
-    source: dist
+    plugin: nil
+    source: .
+    build-packages:
+      - npm
     override-build: |
-      craftctl default
-      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.ken-copilot.desktop $SNAPCRAFT_PART_INSTALL/linux-unpacked/
+      npm install
+      npm run build
+      mkdir -p $SNAPCRAFT_PART_INSTALL/unpacked
+      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.ken-copilot.desktop $SNAPCRAFT_PART_INSTALL/unpacked/
       cp $SNAPCRAFT_PROJECT_DIR/icon.png $SNAPCRAFT_PART_INSTALL/
+      mv dist/linux*-unpacked/* $SNAPCRAFT_PART_INSTALL/unpacked 
     prime:
-      - linux-unpacked
+      - unpacked
       - icon.png
       - -*/chrome-sandbox
       - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/lib
@@ -42,8 +48,8 @@ plugs:
 apps:
   ken-copilot:
     extensions: [gnome]
-    desktop: linux-unpacked/com.github.kenvandine.ken-copilot.desktop
-    command: linux-unpacked/ken-copilot --use-tray-icon --no-sandbox --disable-seccomp-filter-sandbox
+    desktop: unpacked/com.github.kenvandine.ken-copilot.desktop
+    command: unpacked/ken-copilot --use-tray-icon --no-sandbox --disable-seccomp-filter-sandbox
     plugs:
       - shmem
       - network

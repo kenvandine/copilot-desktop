@@ -4,6 +4,6 @@ Name=Ken's Copilot
 Comment=Web app for Copilot
 Type=Application
 Exec=ken-copilot
-Icon=${SNAP}/linux-unpacked/resources/app/icon.png
+Icon=${SNAP}/unpacked/resources/app/icon.png
 Categories=Accessories;
 Keywords=AI;Copilot;GPT;ChatGPT;Gemini;
