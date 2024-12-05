@@ -5,7 +5,7 @@ Unofficial wrapper for Microsoft's Copilot AI Companion, providing a native Linu
 
 ## Disclaimer
 
-This project and its contributors are not affiliated with Microsoft. This is simply an Electron wrapper that loads teh offical Microsoft Copilot web application.
+This project and its contributors are not affiliated with Microsoft. This is simply an Electron wrapper that loads the offical Microsoft Copilot web application.
 # Installation
 
 [![Get it from the Snap Store](https://raw.githubusercontent.com/snapcore/snap-store-badges/master/EN/%5BEN%5D-snap-store-white.png)](https://snapcraft.io/ken-copilot)
