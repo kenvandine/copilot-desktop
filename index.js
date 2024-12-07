@@ -21,25 +21,26 @@ function createWindow () {
 
   win.removeMenu();
 
-  //win.loadFile(join(__dirname, 'index.html'));
-  win.loadURL(appURL);
-
   tray = new Tray(icon);
-  // Ignore double click events for the tray icon
-  tray.setIgnoreDoubleClickEvents(true)
 
   const contextMenu = Menu.buildFromTemplate([
-	  { label: 'Copilot', click: () => focusWindow()},
-	  { label: 'Quit', click: () => app.quit() }
+    {
+      label: 'Show/Hide CoPilot',
+      icon: icon,
+      click: () => {
+        if (win.isVisible()) {
+          win.hide();
+        } else {
+          win.show();
+        }
+      }
+    },
+    { type: 'separator' },
+    { label: 'Quit', role: 'quit' }
   ]);
 
-  tray.setTitle('Copilot');
   tray.setToolTip('Copilot');
   tray.setContextMenu(contextMenu);
-  tray.on('click', () => {
-	  console.log("click");
-	  focusWindow();
-  });
 
   ipcMain.on('log-message', (event, message) => {
     console.log('Log from preload: ', message);
@@ -61,15 +62,9 @@ function createWindow () {
       win.loadFile('offline.html');
     }
   });
-}
 
-function focusWindow() {
-  console.log("focusWindow");
-  if (win.isFocused()) {
-    win.hide();
-  } else {
-    win.show();
-  }
+  //win.loadFile(join(__dirname, 'index.html'));
+  win.loadURL(appURL);
 }
 
 app.whenReady().then(createWindow);
