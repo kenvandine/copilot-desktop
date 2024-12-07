@@ -55,6 +55,7 @@ apps:
       - network
       - audio-playback
       - audio-record
+      - unity7
     environment:
       GTK_USE_PORTAL: "1"
       TMPDIR: $XDG_RUNTIME_DIR
