@@ -6,7 +6,7 @@ let win = null;
 const appURL = 'https://copilot.microsoft.com'
 
 function createWindow () {
-  const icon = nativeImage.createFromPath('/snap/ken-copilot/current/icon.png');
+  const icon = nativeImage.createFromPath(join(__dirname, 'icon.png'));
   win = new BrowserWindow({
     width: 800,
     height: 800,
