@@ -18,6 +18,7 @@ parts:
     source: .
     build-packages:
       - npm
+      - git
     override-build: |
       npm install
       npm run build
