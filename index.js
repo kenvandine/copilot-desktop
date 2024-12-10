@@ -41,7 +41,12 @@ function createWindow () {
       }
     },
     { type: 'separator' },
-    { label: 'Quit', role: 'quit' }
+    { label: 'Quit',
+      click: () => {
+	console.log("Quit clicked, Exiting");
+	app.exit();
+      }
+    },
   ]);
 
   tray.setToolTip('Copilot');
@@ -70,6 +75,18 @@ function createWindow () {
 
   //win.loadFile(join(__dirname, 'index.html'));
   win.loadURL(appURL);
+}
+
+// Ensure we're a single instance app
+const firstInstance = app.requestSingleInstanceLock();
+
+if (!firstInstance) {
+  app.quit();
+} else {
+  app.on("second-instance", (event) => {
+    console.log("second-instance");
+    win.show();
+  });
 }
 
 app.whenReady().then(createWindow);
