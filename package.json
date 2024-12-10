@@ -1,7 +1,7 @@
 {
-  "name": "ken-copilot",
+  "name": "copilot-desktop",
   "version": "0.0.1",
-  "description": "Your Copilot",
+  "description": "Copilot",
   "main": "index.js",
   "scripts": {
     "start": "electron .",
@@ -22,14 +22,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kenvandine/ken-copilot.git"
+    "url": "git+https://github.com/kenvandine/copilot-desktop.git"
   },
   "author": "Ken VanDine",
   "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/kenvandine/ken-copilot/issues"
+    "url": "https://github.com/kenvandine/copilot-desktop/issues"
   },
-  "homepage": "https://github.com/kenvandine/ken-copilot#readme",
+  "homepage": "https://github.com/kenvandine/copilot-desktop#readme",
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
