@@ -21,6 +21,11 @@ function createWindow () {
 
   win.removeMenu();
 
+  win.on('close', (event) => {
+    event.preventDefault();
+    win.hide();
+  });
+
   tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
@@ -70,9 +75,7 @@ function createWindow () {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  console.log("window-all-closed");
 });
 
 app.on('activate', () => {
