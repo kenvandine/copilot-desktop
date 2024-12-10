@@ -1,4 +1,5 @@
 name: copilot-desktop
+version: git
 summary: Copilot Desktop
 description: Web app for Copilot
 adopt-info: copilot-desktop
@@ -17,9 +18,6 @@ parts:
     source: .
     build-packages:
       - npm
-    override-pull: |
-      craftctl default
-      craftctl set version=$(git describe --tags --abbrev=10)
     override-build: |
       npm install
       npm run build
