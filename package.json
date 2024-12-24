@@ -1,7 +1,8 @@
 {
   "name": "copilot-desktop",
-  "version": "0.0.1",
-  "description": "Copilot",
+  "title": "Copilot Desktop",
+  "version": "0.0.3",
+  "description": "Unofficial Web app for Microsoft Copilot providing the desktop user experience you would expect on Ubuntu or any other Linux desktop.",
   "main": "index.js",
   "scripts": {
     "start": "electron .",
