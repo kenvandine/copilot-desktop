@@ -10,6 +10,9 @@ This project and its contributors are not affiliated with Microsoft. This is sim
 
 [![Get it from the Snap Store](https://raw.githubusercontent.com/snapcore/snap-store-badges/master/EN/%5BEN%5D-snap-store-white.png)](https://snapcraft.io/copilot-desktop)
 
+[![copilot-desktop](https://snapcraft.io/copilot-desktop/badge.svg)](https://snapcraft.io/copilot-desktop)
+[![copilot-desktop](https://snapcraft.io/copilot-desktop/trending.svg?name=0)](https://snapcraft.io/copilot-desktop)
+
 ## Requirements
 
 You will need to install [npm](https://www.npmjs.com/), the Node.js package manager. On most distributions, the package is simply called `npm`.
