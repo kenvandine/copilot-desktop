@@ -1,5 +1,4 @@
 name: copilot-desktop
-version: git
 summary: Copilot Desktop
 description: |
   Unofficial Web app for Microsoft Copilot providing the desktop user
@@ -32,6 +31,7 @@ parts:
       - npm
       - git
     override-build: |
+      craftctl set version=$(git describe --tags --abbrev=10)
       npm install
       npm run build
       mkdir -p $SNAPCRAFT_PART_INSTALL/unpacked
