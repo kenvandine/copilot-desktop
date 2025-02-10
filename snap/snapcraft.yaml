@@ -82,3 +82,20 @@ apps:
       GTK_USE_PORTAL: "1"
       TMPDIR: $XDG_RUNTIME_DIR
       HOME: $SNAP_REAL_HOME
+  daemon:
+    extensions: [gnome]
+    daemon: simple
+    restart-delay: 3s
+    install-mode: disable
+    command: unpacked/copilot-desktop --use-tray-icon --no-sandbox --disable-seccomp-filter-sandbox
+    plugs:
+      - audio-playback
+      - audio-record
+      - home
+      - network
+      - shmem
+      - unity7
+    environment:
+      GTK_USE_PORTAL: "1"
+      TMPDIR: $XDG_RUNTIME_DIR
+      HOME: $SNAP_REAL_HOME
