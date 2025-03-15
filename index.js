@@ -1,4 +1,4 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut} = require('electron');
 const { join } = require('path');
 const fs = require('fs');
 
@@ -13,7 +13,7 @@ function createWindow () {
   // Log geometry information for easier debugging
   console.log(`Primary Screen Geometry - Width: ${width} Height: ${height} X: ${x} Y: ${y}`);
 
-  const icon = nativeImage.createFromPath(join(__dirname, 'icon.png'));
+  const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
 
   win = new BrowserWindow({
     width: width * 0.6,
@@ -38,9 +38,11 @@ function createWindow () {
 
   tray = new Tray(icon);
 
+  let userShortcut = 'Alt+H'
+
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show/Hide CoPilot',
+      label: `Show/Hide CoPilot (${userShortcut})`,
       icon: icon,
       click: () => {
         if (win.isVisible()) {
@@ -85,7 +87,7 @@ function createWindow () {
     if (isOnline) {
       win.loadURL(appURL);
     } else {
-      win.loadFile('offline.html');
+      win.loadFile('./assets/html/offline.html');
     }
   });
 
@@ -131,7 +133,7 @@ function createAboutWindow() {
     parent: win  // Set the main window as parent
   });
 
-  aboutWindow.loadFile('about.html');
+  aboutWindow.loadFile('./assets/html/about.html');
   aboutWindow.removeMenu();
 
   // Read version from package.json
@@ -178,7 +180,23 @@ ipcMain.on('get-app-metadata', (event) => {
     event.sender.send('app-author', appAuthor);
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+
+    // Register global shortcut  Alt+H
+    globalShortcut.register('Alt+H', () => {
+      if (win.isVisible()) {
+        win.hide();
+      } else {
+        win.show();
+      }
+    });
+});
+
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 app.on('window-all-closed', () => {
   console.log("window-all-closed");
