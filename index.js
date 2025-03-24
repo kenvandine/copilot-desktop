@@ -150,7 +150,7 @@ ipcMain.on('get-app-metadata', (event) => {
 
 app.on('ready', () => {
   // Register global shortcut  Alt+H
-  globalShortcut.register('Alt+H', () => {
+  globalShortcut.register(userShortcut, () => {
     showOrHide();
   });
   
