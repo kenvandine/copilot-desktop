@@ -2,6 +2,7 @@ const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , gl
 const { join } = require('path');
 const fs = require('fs');
 
+let userShortcut = 'Alt+H'
 let tray = null;
 let win = null;
 const appURL = 'https://copilot.microsoft.com'
@@ -191,6 +192,7 @@ app.on('ready', () => {
 });
 
 function showOrHide() {
+  console.log("showOrHide");
   if (win.isVisible()) {
     win.hide();
   } else {
