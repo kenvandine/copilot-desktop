@@ -42,10 +42,13 @@ parts:
       npm install
       npm run build
       mkdir -p $SNAPCRAFT_PART_INSTALL/unpacked
-      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.copilot-desktop.desktop $SNAPCRAFT_PART_INSTALL/unpacked/
+      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.copilot-desktop.desktop $SNAPCRAFT_PART_INSTALL/
       cp $SNAPCRAFT_PROJECT_DIR/assets/img/icon.png $SNAPCRAFT_PART_INSTALL/
       mv dist/linux*-unpacked/* $SNAPCRAFT_PART_INSTALL/unpacked 
+      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.copilot-desktop-autostart.desktop $SNAPCRAFT_PART_INSTALL/
+      cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.copilot-desktop-daemon.desktop $SNAPCRAFT_PART_INSTALL/
     prime:
+      - com.github.kenvandine.copilot-desktop*.desktop
       - unpacked
       - -*/assets/img/icon.png
       - -*/chrome-sandbox
@@ -76,7 +79,8 @@ plugs:
 apps:
   copilot-desktop:
     extensions: [gnome]
-    desktop: unpacked/com.github.kenvandine.copilot-desktop.desktop
+    desktop: com.github.kenvandine.copilot-desktop.desktop
+    autostart: com.github.kenvandine.copilot-desktop-autostart.desktop
     command: launcher
     plugs:
       - audio-playback
@@ -95,6 +99,7 @@ apps:
     restart-delay: 3s
     install-mode: disable
     command: daemon
+    desktop: com.github.kenvandine.copilot-desktop-daemon.desktop
     plugs:
       - audio-playback
       - audio-record

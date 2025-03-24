@@ -1,0 +1,9 @@
+[Desktop Entry]
+Encoding=UTF-8
+Name=Copilot
+Comment=Copilot AI Companion
+Type=Application
+Exec=copilot-desktop --tray
+Icon=${SNAP}/unpacked/resources/app/assets/img/icon.png
+Categories=Accessories;
+Keywords=AI;Copilot;GPT;ChatGPT;Gemini;
