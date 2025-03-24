@@ -37,6 +37,16 @@ function createWindow () {
   });
 
   tray = new Tray(icon);
+  // Ignore double click events for the tray icon
+  tray.setIgnoreDoubleClickEvents(true)
+  tray.on('click', () => {
+    console.log("AppIndicator clicked");
+    if (win.isVisible()) {
+      win.hide();
+    } else {
+      win.show();
+    }
+  });
 
   const contextMenu = Menu.buildFromTemplate([
     {
