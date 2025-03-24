@@ -164,7 +164,8 @@ app.on('ready', () => {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: `Show/Hide CoPilot (${userShortcut})`,
+      //label: `Show/Hide CoPilot (${userShortcut})`,
+      label: `Show/Hide CoPilot`,
       icon: icon,
       click: () => {
         showOrHide();
