@@ -2,7 +2,7 @@ const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , gl
 const { join } = require('path');
 const fs = require('fs');
 
-let userShortcut = 'Alt+H'
+let showHideShortcut = 'Alt+H'
 let tray = null;
 let win = null;
 let autostart = false;
@@ -178,12 +178,24 @@ ipcMain.on('get-app-metadata', (event) => {
     event.sender.send('app-author', appAuthor);
 });
 
+// Enable usage of Portal's globalShortcuts. This is essential for cases when
+// the app runs in a Wayland session.
+app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal')
+
 app.on('ready', () => {
   // Register global shortcut  Alt+H
-  globalShortcut.register(userShortcut, () => {
+  const ret = globalShortcut.register(showHideShortcut, () => {
+    console.log("globalShortcut: " + showHideShortcut);
     showOrHide();
   });
-  
+
+  if (!ret) {
+    console.log('registration failed')
+  }
+
+  // Check whether a shortcut is registered.
+  console.log(globalShortcut.isRegistered(showHideShortcut));
+
   tray = new Tray(icon);
   // Ignore double click events for the tray icon
   tray.setIgnoreDoubleClickEvents(true)
@@ -197,8 +209,7 @@ app.on('ready', () => {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      //label: `Show/Hide CoPilot (${userShortcut})`,
-      label: `Show/Hide CoPilot`,
+      label: `Show/Hide CoPilot (${showHideShortcut})`,
       icon: icon,
       click: () => {
         showOrHide();
