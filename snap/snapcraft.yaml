@@ -80,7 +80,7 @@ apps:
   copilot-desktop:
     extensions: [gnome]
     desktop: com.github.kenvandine.copilot-desktop.desktop
-    autostart: com.github.kenvandine.copilot-desktop-autostart.desktop
+    autostart: copilot-desktop.desktop
     command: launcher
     plugs:
       - audio-playback

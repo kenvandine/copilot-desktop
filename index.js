@@ -5,9 +5,39 @@ const fs = require('fs');
 let userShortcut = 'Alt+H'
 let tray = null;
 let win = null;
+let autostart = false;
 const appURL = 'https://copilot.microsoft.com'
 const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
 const isTray = process.argv.includes('--tray');
+const snapPath = process.env.SNAP
+const snapUserData = process.env.SNAP_USER_DATA
+
+function initializeAutostart() {
+  if (fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
+    console.log('Autostart file exists')
+    autostart = true;
+  } else {
+    console.log('Autostart file does not exist')
+    autostart = false;
+  }
+}
+
+function handleAutoStartChange() {
+  if (autostart) {
+    console.log("Enabling autostart");
+    if (!fs.existsSync(snapUserData + '/.config/autostart')) {
+      fs.mkdirSync(snapUserData + '/.config/autostart', recursive=true);
+    }
+    if (!fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
+      fs.copyFileSync(snapPath + '/com.github.kenvandine.copilot-desktop-autostart.desktop', snapUserData + '/.config/autostart/copilot-desktop.desktop');
+    }
+  } else {
+    console.log("Disabling autostart");
+    if (fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
+      fs.rmSync(snapUserData + '/.config/autostart/copilot-desktop.desktop');
+    }
+  }
+}
 
 function createWindow () {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -162,6 +192,9 @@ app.on('ready', () => {
     showOrHide();
   });
 
+  // Ensure autostart is set properly at start
+  initializeAutostart();
+
   const contextMenu = Menu.buildFromTemplate([
     {
       //label: `Show/Hide CoPilot (${userShortcut})`,
@@ -171,17 +204,29 @@ app.on('ready', () => {
         showOrHide();
       }
     },
+    {
+      label: 'Autostart',
+      type: 'checkbox',
+      checked: autostart,
+      click: () => {
+        autostart = contextMenu.items[1].checked;
+        console.log("Autostart toggled: " + autostart);
+        handleAutoStartChange();
+        // We need to setContextMenu to get the state changed for checked
+        tray.setContextMenu(contextMenu);
+      }
+    },
     { type: 'separator' },
     { label: 'About',
       click: () => {
-	console.log("About clicked");
+        console.log("About clicked");
 	createAboutWindow();
       }
     },
     { label: 'Quit',
       click: () => {
-	console.log("Quit clicked, Exiting");
-	app.exit();
+        console.log("Quit clicked, Exiting");
+        app.exit();
       }
     },
   ]);
