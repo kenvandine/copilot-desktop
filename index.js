@@ -5,6 +5,8 @@ const fs = require('fs');
 let tray = null;
 let win = null;
 const appURL = 'https://copilot.microsoft.com'
+const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
+const isTray = process.argv.includes('--tray');
 
 function createWindow () {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -13,14 +15,13 @@ function createWindow () {
   // Log geometry information for easier debugging
   console.log(`Primary Screen Geometry - Width: ${width} Height: ${height} X: ${x} Y: ${y}`);
 
-  const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
-
   win = new BrowserWindow({
     width: width * 0.6,
     height: height * 0.8,
     x: x + ((width - (width * 0.6)) / 2),
     y: y + ((height - (height * 0.8)) / 2),
     icon: icon,
+    show: !isTray, // Start hiden if --tray
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       nodeIntegration: true,
@@ -35,40 +36,6 @@ function createWindow () {
     event.preventDefault();
     win.hide();
   });
-
-  tray = new Tray(icon);
-
-  let userShortcut = 'Alt+H'
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: `Show/Hide CoPilot (${userShortcut})`,
-      icon: icon,
-      click: () => {
-        if (win.isVisible()) {
-          win.hide();
-        } else {
-          win.show();
-        }
-      }
-    },
-    { type: 'separator' },
-    { label: 'About',
-      click: () => {
-	console.log("About clicked");
-	createAboutWindow();
-      }
-    },
-    { label: 'Quit',
-      click: () => {
-	console.log("Quit clicked, Exiting");
-	app.exit();
-      }
-    },
-  ]);
-
-  tray.setToolTip('Copilot');
-  tray.setContextMenu(contextMenu);
 
   ipcMain.on('log-message', (event, message) => {
     console.log('Log from preload: ', message);
@@ -180,19 +147,56 @@ ipcMain.on('get-app-metadata', (event) => {
     event.sender.send('app-author', appAuthor);
 });
 
-app.whenReady().then(() => {
-  createWindow();
+app.on('ready', () => {
+  // Register global shortcut  Alt+H
+  globalShortcut.register('Alt+H', () => {
+    showOrHide();
+  });
+  
+  tray = new Tray(icon);
+  // Ignore double click events for the tray icon
+  tray.setIgnoreDoubleClickEvents(true)
+  tray.on('click', () => {
+    console.log("AppIndicator clicked");
+    showOrHide();
+  });
 
-    // Register global shortcut  Alt+H
-    globalShortcut.register('Alt+H', () => {
-      if (win.isVisible()) {
-        win.hide();
-      } else {
-        win.show();
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: `Show/Hide CoPilot (${userShortcut})`,
+      icon: icon,
+      click: () => {
+        showOrHide();
       }
-    });
+    },
+    { type: 'separator' },
+    { label: 'About',
+      click: () => {
+	console.log("About clicked");
+	createAboutWindow();
+      }
+    },
+    { label: 'Quit',
+      click: () => {
+	console.log("Quit clicked, Exiting");
+	app.exit();
+      }
+    },
+  ]);
+
+  tray.setToolTip('Copilot');
+  tray.setContextMenu(contextMenu);
+
+  createWindow();
 });
 
+function showOrHide() {
+  if (win.isVisible()) {
+    win.hide();
+  } else {
+    win.show();
+  }
+}
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();

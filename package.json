@@ -6,6 +6,7 @@
   "main": "index.js",
   "scripts": {
     "start": "electron .",
+    "start-tray": "electron . --tray",
     "build": "electron-builder --publish never"
   },
   "build": {
