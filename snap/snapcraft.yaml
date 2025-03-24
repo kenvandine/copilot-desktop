@@ -89,7 +89,6 @@ apps:
       GTK_USE_PORTAL: 1
       TMPDIR: $XDG_RUNTIME_DIR
       HOME: $SNAP_REAL_HOME
-      WAYLAND_DEBUG: 1
   daemon:
     extensions: [gnome]
     daemon: simple
