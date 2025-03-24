@@ -16,7 +16,7 @@ contact: https://github.com/kenvandine/copilot-desktop/issues
 issues: https://github.com/kenvandine/copilot-desktop/issues
 website: https://github.com/kenvandine/copilot-desktop
 license: GPL-3.0+
-icon: icon512.png
+icon: ./assets/img/icon.png
 
 platforms:
   amd64:
@@ -43,11 +43,11 @@ parts:
       npm run build
       mkdir -p $SNAPCRAFT_PART_INSTALL/unpacked
       cp $SNAPCRAFT_PROJECT_DIR/com.github.kenvandine.copilot-desktop.desktop $SNAPCRAFT_PART_INSTALL/unpacked/
-      cp $SNAPCRAFT_PROJECT_DIR/icon.png $SNAPCRAFT_PART_INSTALL/
+      cp $SNAPCRAFT_PROJECT_DIR/assets/img/icon.png $SNAPCRAFT_PART_INSTALL/
       mv dist/linux*-unpacked/* $SNAPCRAFT_PART_INSTALL/unpacked 
     prime:
       - unpacked
-      - icon.png
+      - -*/assets/img/icon.png
       - -*/chrome-sandbox
       - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/lib
       - -*/resources/app.asar.unpacked/node_modules/sharp/vendor/include

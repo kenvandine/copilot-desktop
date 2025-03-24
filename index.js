@@ -1,11 +1,12 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut} = require('electron');
 const { join } = require('path');
 const fs = require('fs');
 
+let userShortcut = 'Alt+H'
 let tray = null;
 let win = null;
 const appURL = 'https://copilot.microsoft.com'
-const icon = nativeImage.createFromPath(join(__dirname, 'icon.png'));
+const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
 const isTray = process.argv.includes('--tray');
 
 function createWindow () {
@@ -54,7 +55,7 @@ function createWindow () {
     if (isOnline) {
       win.loadURL(appURL);
     } else {
-      win.loadFile('offline.html');
+      win.loadFile('./assets/html/offline.html');
     }
   });
 
@@ -100,7 +101,7 @@ function createAboutWindow() {
     parent: win  // Set the main window as parent
   });
 
-  aboutWindow.loadFile('about.html');
+  aboutWindow.loadFile('./assets/html/about.html');
   aboutWindow.removeMenu();
 
   // Read version from package.json
@@ -148,6 +149,11 @@ ipcMain.on('get-app-metadata', (event) => {
 });
 
 app.on('ready', () => {
+  // Register global shortcut  Alt+H
+  globalShortcut.register('Alt+H', () => {
+    showOrHide();
+  });
+  
   tray = new Tray(icon);
   // Ignore double click events for the tray icon
   tray.setIgnoreDoubleClickEvents(true)
@@ -158,7 +164,7 @@ app.on('ready', () => {
 
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Show/Hide CoPilot',
+      label: `Show/Hide CoPilot (${userShortcut})`,
       icon: icon,
       click: () => {
         showOrHide();
@@ -186,12 +192,17 @@ app.on('ready', () => {
 });
 
 function showOrHide() {
+  console.log("showOrHide");
   if (win.isVisible()) {
     win.hide();
   } else {
     win.show();
   }
 }
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 app.on('window-all-closed', () => {
   console.log("window-all-closed");

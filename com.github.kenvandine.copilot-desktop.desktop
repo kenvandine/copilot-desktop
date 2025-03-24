@@ -4,6 +4,6 @@ Name=Copilot
 Comment=Copilot AI Companion
 Type=Application
 Exec=copilot-desktop
-Icon=${SNAP}/unpacked/resources/app/icon.png
+Icon=${SNAP}/unpacked/resources/app/assets/img/icon.png
 Categories=Accessories;
 Keywords=AI;Copilot;GPT;ChatGPT;Gemini;
