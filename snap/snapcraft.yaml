@@ -109,3 +109,4 @@ apps:
     environment:
       GTK_USE_PORTAL: 0
       HOME: $SNAP_REAL_HOME
+      DISABLE_WAYLAND: 1
