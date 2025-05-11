@@ -60,7 +60,6 @@ parts:
     source: launcher
     override-build: |
       cp launcher $CRAFT_PART_INSTALL/
-      cp daemon $CRAFT_PART_INSTALL/
 
   cleanup:
     after: [ copilot-desktop ]
@@ -93,20 +92,3 @@ apps:
       GTK_USE_PORTAL: 1
       TMPDIR: $XDG_RUNTIME_DIR
       HOME: $SNAP_REAL_HOME
-  daemon:
-    extensions: [gnome]
-    daemon: simple
-    restart-delay: 3s
-    install-mode: disable
-    command: daemon
-    desktop: com.github.kenvandine.copilot-desktop-daemon.desktop
-    plugs:
-      - audio-playback
-      - audio-record
-      - home
-      - network
-      - shmem
-    environment:
-      GTK_USE_PORTAL: 0
-      HOME: $SNAP_REAL_HOME
-      DISABLE_WAYLAND: 1
