@@ -191,6 +191,9 @@ ipcMain.on('get-app-metadata', (event) => {
 app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal')
 
 app.on('ready', () => {
+  console.log(`Electron Version: ${process.versions.electron}`);
+  console.log(`App Version: ${app.getVersion()}`);
+
   // Register global shortcut  Alt+H
   const ret = globalShortcut.register(showHideShortcut, () => {
     console.log("globalShortcut: " + showHideShortcut);
