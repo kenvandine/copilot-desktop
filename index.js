@@ -121,9 +121,19 @@ function createWindow () {
 
   win.loadURL(appURL);
 
-  // Show offline page if the URL fails to load (e.g. no internet)
-  win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.log(`did-fail-load: ${errorDescription} (${errorCode})`);
+  // Show offline page if the *main* app URL fails to load due to a real network error
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.log(`did-fail-load: ${errorDescription} (${errorCode}) on ${validatedURL}, mainFrame=${isMainFrame}`);
+
+    // Ignore non-main-frame failures and benign aborts (e.g. redirects or intentional load cancellations)
+    if (!isMainFrame || errorCode === -3) {
+      return;
+    }
+
+    // Only trigger offline page for failures related to the main app URL
+    if (validatedURL && !validatedURL.startsWith(appURL)) {
+      return;
+    }
     wasOffline = true;
     win.loadFile('./assets/html/offline.html');
   });
