@@ -72,7 +72,7 @@ ipcMain.on('open-external-link', (event, url) => {
 
   // Validate the sender origin for security
   const senderURL = event.senderFrame.url;
-  const isOfflinePage = senderURL.startsWith('file://') && senderURL.includes('offline.html');
+  const isOfflinePage = senderURL.startsWith('file://') && senderURL.endsWith('offline.html');
   const isAllowedHost = (() => {
     try {
       const host = new URL(senderURL).host;
@@ -174,7 +174,7 @@ function createWindow () {
       errorCode === -21 ||  // NETWORK_CHANGED
       errorCode === -105 || // NAME_NOT_RESOLVED
       errorCode === -106 || // INTERNET_DISCONNECTED
-      (errorCode <= -100 && errorCode >= -199) // Connection errors
+      (errorCode >= -199 && errorCode <= -100) // Connection errors
     );
 
     if (isNetworkError) {
@@ -234,7 +234,7 @@ function createWindow () {
       // If URL parsing fails, just deny the action
       console.log('windowOpenHandler: invalid URL', url, e);
     }
-    return { action: 'deny' }
+    return { action: 'deny' };
   });
 
   win.loadURL(appURL);
