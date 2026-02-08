@@ -87,7 +87,7 @@ ipcMain.on('network-status', (event, isOnline) => {
     win.loadURL(appURL);
   } else if (!isOnline && !wasOffline) {
     wasOffline = true;
-    win.loadFile('./assets/html/offline.html');
+    win.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
   }
 });
 
@@ -120,8 +120,6 @@ function createWindow () {
     win.hide();
   });
 
-  win.loadURL(appURL);
-
   // Show offline page if the *main* app URL fails to load due to a real network error
   win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     console.log(`did-fail-load: ${errorDescription} (${errorCode}) on ${validatedURL}, mainFrame=${isMainFrame}`);
@@ -136,7 +134,7 @@ function createWindow () {
       return;
     }
     wasOffline = true;
-    win.loadFile('./assets/html/offline.html');
+    win.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
   });
 
   // Intercept navigation and only allow app + auth hosts in-app
@@ -176,6 +174,8 @@ function createWindow () {
     return { action: 'deny' }
   });
 
+  win.loadURL(appURL);
+
   win.webContents.on('before-input-event', (event, input) => {
     if (input.control && input.key.toLowerCase() === 'r') {
       console.log('Pressed Control+R')
@@ -193,8 +193,13 @@ if (!firstInstance) {
 } else {
   app.on("second-instance", (event) => {
     console.log("second-instance");
-    win.show();
-    win.focus();
+    if (!win) {
+      createWindow();
+    }
+    if (win) {
+      win.show();
+      win.focus();
+    }
   });
 }
 
