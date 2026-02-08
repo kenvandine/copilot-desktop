@@ -6,6 +6,7 @@ let showHideShortcut = 'Alt+H'
 let tray = null;
 let win = null;
 let autostart = false;
+let wasOffline = false;
 const appURL = 'https://copilot.microsoft.com'
 const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
 const isTray = process.argv.includes('--tray');
@@ -26,7 +27,7 @@ function handleAutoStartChange() {
   if (autostart) {
     console.log("Enabling autostart");
     if (!fs.existsSync(snapUserData + '/.config/autostart')) {
-      fs.mkdirSync(snapUserData + '/.config/autostart', recursive=true);
+      fs.mkdirSync(snapUserData + '/.config/autostart', { recursive: true });
     }
     if (!fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
       fs.copyFileSync(snapPath + '/com.github.kenvandine.copilot-desktop-autostart.desktop', snapUserData + '/.config/autostart/copilot-desktop.desktop');
@@ -38,6 +39,56 @@ function handleAutoStartChange() {
     }
   }
 }
+
+// IPC listeners (registered once, outside createWindow to avoid leaks)
+ipcMain.on('zoom-in', () => {
+  console.log('zoom-in');
+  const currentZoom = win.webContents.getZoomLevel();
+  win.webContents.setZoomLevel(currentZoom + 1);
+});
+
+ipcMain.on('zoom-out', () => {
+  console.log('zoom-out');
+  const currentZoom = win.webContents.getZoomLevel();
+  win.webContents.setZoomLevel(currentZoom - 1);
+});
+
+ipcMain.on('zoom-reset', () => {
+  console.log('zoom-reset');
+  win.webContents.setZoomLevel(0);
+});
+
+ipcMain.on('log-message', (event, message) => {
+  console.log('Log from preload: ', message);
+});
+
+// Open links with default browser
+ipcMain.on('open-external-link', (event, url) => {
+  console.log('open-external-link: ', url);
+  if (url) {
+    shell.openExternal(url);
+  }
+});
+
+// Retry connection from offline page
+ipcMain.on('retry-connection', () => {
+  console.log('Retrying connection...');
+  wasOffline = false;
+  win.loadURL(appURL);
+});
+
+// Listen for network status updates from the preload script
+// Only act on transitions to avoid reload loops
+ipcMain.on('network-status', (event, isOnline) => {
+  console.log(`Network status: ${isOnline ? 'online' : 'offline'}`);
+  if (isOnline && wasOffline) {
+    wasOffline = false;
+    win.loadURL(appURL);
+  } else if (!isOnline && !wasOffline) {
+    wasOffline = true;
+    win.loadFile('./assets/html/offline.html');
+  }
+});
 
 function createWindow () {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -68,51 +119,45 @@ function createWindow () {
     win.hide();
   });
 
-  ipcMain.on('zoom-in', () => {
-    console.log('zoom-in');
-    const currentZoom = win.webContents.getZoomLevel();
-    win.webContents.setZoomLevel(currentZoom + 1);
+  win.loadURL(appURL);
+
+  // Show offline page if the URL fails to load (e.g. no internet)
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.log(`did-fail-load: ${errorDescription} (${errorCode})`);
+    wasOffline = true;
+    win.loadFile('./assets/html/offline.html');
   });
 
-  ipcMain.on('zoom-out', () => {
-    console.log('zoom-out');
-    const currentZoom = win.webContents.getZoomLevel();
-    win.webContents.setZoomLevel(currentZoom - 1);
-  });
+  // Hosts allowed to navigate within the Electron window
+  const allowedHosts = new Set([
+    'copilot.microsoft.com',
+    'login.microsoftonline.com',
+    'login.live.com',
+  ]);
 
-  ipcMain.on('zoom-reset', () => {
-    console.log('zoom-reset');
-    win.webContents.setZoomLevel(0);
-  });
-
-  ipcMain.on('log-message', (event, message) => {
-    console.log('Log from preload: ', message);
-  });
-
-  // Open links with default browser
-  ipcMain.on('open-external-link', (event, url) => {
-    console.log('open-external-link: ', url);
-    shell.openExternal(url);
-  });
-
-  // Listen for network status updates from the renderer process
-  ipcMain.on('network-status', (event, isOnline) => {
-    console.log(`Network status: ${isOnline ? 'online' : 'offline'}`);
-    console.log("network-status changed: " + isOnline);
-    if (isOnline) {
-      win.loadURL(appURL);
-    } else {
-      win.loadFile('./assets/html/offline.html');
+  // Intercept navigation and only allow app + auth hosts in-app
+  win.webContents.on('will-navigate', (event, url) => {
+    const targetHost = new URL(url).host;
+    if (!allowedHosts.has(targetHost)) {
+      console.log('will-navigate external: ', url);
+      event.preventDefault();
+      shell.openExternal(url);
     }
   });
 
-  //win.loadFile(join(__dirname, 'index.html'));
-  win.loadURL(appURL);
-
-  // Link clicks open new windows, let's force them to open links in
-  // the default browser
+  // New-window requests (window.open / target="_blank"): only keep the
+  // app host in-app; everything else opens in the default browser
   win.webContents.setWindowOpenHandler(({url}) => {
     console.log('windowOpenHandler: ', url);
+    try {
+      const host = new URL(url).host;
+      if (host === new URL(appURL).host) {
+        win.loadURL(url);
+        return { action: 'deny' };
+      }
+    } catch (e) {
+      // If URL parsing fails, open externally
+    }
     shell.openExternal(url);
     return { action: 'deny' }
   });
@@ -135,6 +180,7 @@ if (!firstInstance) {
   app.on("second-instance", (event) => {
     console.log("second-instance");
     win.show();
+    win.focus();
   });
 }
 
@@ -144,9 +190,9 @@ function createAboutWindow() {
 
   const aboutWindow = new BrowserWindow({
     width: 500,
-    height: 300,
+    height: 420,
     x: x + ((width - 500) / 2),
-    y: y + ((height - 500) / 2),
+    y: y + ((height - 420) / 2),
     title: 'About',
     webPreferences: {
       nodeIntegration: true,
