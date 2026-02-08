@@ -1,4 +1,5 @@
 const { ipcRenderer } = require('electron');
+const { allowedHosts } = require('./constants');
 
 // Network status detection
 function updateNetworkStatus() {
@@ -17,13 +18,6 @@ window.addEventListener('DOMContentLoaded', () => {
             ipcRenderer.send('retry-connection');
         });
     }
-
-    // Hosts allowed to navigate within the Electron window
-    const allowedHosts = new Set([
-        'copilot.microsoft.com',
-        'login.microsoftonline.com',
-        'login.live.com',
-    ]);
 
     // Listen for click events and open non-allowed links externally
     document.addEventListener('click', (event) => {
