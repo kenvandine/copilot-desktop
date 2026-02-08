@@ -137,11 +137,21 @@ function createWindow () {
 
   // Intercept navigation and only allow app + auth hosts in-app
   win.webContents.on('will-navigate', (event, url) => {
-    const targetHost = new URL(url).host;
-    if (!allowedHosts.has(targetHost)) {
-      console.log('will-navigate external: ', url);
+    try {
+      const parsedUrl = new URL(url);
+      const protocol = parsedUrl.protocol;
+      const targetHost = parsedUrl.host;
+
+      // Only allow http/https navigations to known hosts
+      if ((protocol !== 'http:' && protocol !== 'https:') || !allowedHosts.has(targetHost)) {
+        console.log('will-navigate external: ', url);
+        event.preventDefault();
+        shell.openExternal(url);
+      }
+    } catch (e) {
+      // If URL parsing fails, block the navigation to avoid crashes
+      console.log('will-navigate invalid URL: ', url, e);
       event.preventDefault();
-      shell.openExternal(url);
     }
   });
 
