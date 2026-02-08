@@ -8,7 +8,8 @@ function updateNetworkStatus() {
 
 window.addEventListener('online', updateNetworkStatus);
 window.addEventListener('offline', updateNetworkStatus);
-updateNetworkStatus();
+// Don't call updateNetworkStatus() immediately to avoid reload loops
+// Only send status on actual online/offline events
 
 // Listen for DOMContentLoaded event
 window.addEventListener('DOMContentLoaded', () => {
