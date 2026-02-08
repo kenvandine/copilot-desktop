@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "start-tray": "electron . --tray",
-    "build": "electron-builder --publish never"
+    "build": "electron-builder --publish never",
+    "screenshot": "electron screenshot.js"
   },
   "build": {
     "asar": false,
