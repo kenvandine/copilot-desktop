@@ -1,11 +1,13 @@
 const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut} = require('electron');
 const { join } = require('path');
 const fs = require('fs');
+const { allowedHosts } = require('./constants');
 
 let showHideShortcut = 'Alt+H'
 let tray = null;
 let win = null;
 let autostart = false;
+let wasOffline = false;
 const appURL = 'https://copilot.microsoft.com'
 const icon = nativeImage.createFromPath(join(__dirname, '/assets/img/icon.png'));
 const isTray = process.argv.includes('--tray');
@@ -26,7 +28,7 @@ function handleAutoStartChange() {
   if (autostart) {
     console.log("Enabling autostart");
     if (!fs.existsSync(snapUserData + '/.config/autostart')) {
-      fs.mkdirSync(snapUserData + '/.config/autostart', recursive=true);
+      fs.mkdirSync(snapUserData + '/.config/autostart', { recursive: true });
     }
     if (!fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
       fs.copyFileSync(snapPath + '/com.github.kenvandine.copilot-desktop-autostart.desktop', snapUserData + '/.config/autostart/copilot-desktop.desktop');
@@ -38,6 +40,87 @@ function handleAutoStartChange() {
     }
   }
 }
+
+// IPC listeners (registered once, outside createWindow to avoid leaks)
+ipcMain.on('zoom-in', () => {
+  console.log('zoom-in');
+  const currentZoom = win.webContents.getZoomLevel();
+  win.webContents.setZoomLevel(currentZoom + 1);
+});
+
+ipcMain.on('zoom-out', () => {
+  console.log('zoom-out');
+  const currentZoom = win.webContents.getZoomLevel();
+  win.webContents.setZoomLevel(currentZoom - 1);
+});
+
+ipcMain.on('zoom-reset', () => {
+  console.log('zoom-reset');
+  win.webContents.setZoomLevel(0);
+});
+
+ipcMain.on('log-message', (event, message) => {
+  console.log('Log from preload: ', message);
+});
+
+// Open links with default browser
+ipcMain.on('open-external-link', (event, url) => {
+  console.log('open-external-link: ', url);
+  if (!url) {
+    return;
+  }
+
+  // Validate the sender origin for security
+  const senderURL = event.senderFrame.url;
+  const isOfflinePage = senderURL.startsWith('file://') && senderURL.endsWith('offline.html');
+  const isAllowedHost = (() => {
+    try {
+      const host = new URL(senderURL).host;
+      return allowedHosts.has(host);
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!isOfflinePage && !isAllowedHost) {
+    console.log('open-external-link: rejected from untrusted origin', senderURL);
+    return;
+  }
+
+  // Only allow http: and https: protocols for security
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      console.log('open-external-link: rejected non-http(s) protocol', parsedUrl.protocol);
+      return;
+    }
+    shell.openExternal(url).catch(err => {
+      console.error('Failed to open external URL:', err);
+    });
+  } catch (e) {
+    console.log('open-external-link: invalid URL', url, e);
+  }
+});
+
+// Retry connection from offline page
+ipcMain.on('retry-connection', () => {
+  console.log('Retrying connection...');
+  wasOffline = false;
+  win.loadURL(appURL);
+});
+
+// Listen for network status updates from the preload script
+// Only act on transitions to avoid reload loops
+ipcMain.on('network-status', (event, isOnline) => {
+  console.log(`Network status: ${isOnline ? 'online' : 'offline'}`);
+  if (isOnline && wasOffline) {
+    wasOffline = false;
+    win.loadURL(appURL);
+  } else if (!isOnline && !wasOffline) {
+    wasOffline = true;
+    win.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
+  }
+});
 
 function createWindow () {
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -68,54 +151,93 @@ function createWindow () {
     win.hide();
   });
 
-  ipcMain.on('zoom-in', () => {
-    console.log('zoom-in');
-    const currentZoom = win.webContents.getZoomLevel();
-    win.webContents.setZoomLevel(currentZoom + 1);
-  });
+  // Show offline page if the *main* app URL fails to load due to a real network error
+  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    console.log(`did-fail-load: ${errorDescription} (${errorCode}) on ${validatedURL}, mainFrame=${isMainFrame}`);
 
-  ipcMain.on('zoom-out', () => {
-    console.log('zoom-out');
-    const currentZoom = win.webContents.getZoomLevel();
-    win.webContents.setZoomLevel(currentZoom - 1);
-  });
+    // Ignore non-main-frame failures and benign aborts (e.g. redirects or intentional load cancellations)
+    if (!isMainFrame || errorCode === -3) {
+      return;
+    }
 
-  ipcMain.on('zoom-reset', () => {
-    console.log('zoom-reset');
-    win.webContents.setZoomLevel(0);
-  });
+    // Only trigger offline page for failures related to the main app URL
+    if (validatedURL && !validatedURL.startsWith(appURL)) {
+      return;
+    }
 
-  ipcMain.on('log-message', (event, message) => {
-    console.log('Log from preload: ', message);
-  });
+    // Only treat network-related errors as "offline"
+    // Common network error codes: -2 (FAILED), -7 (TIMED_OUT), -21 (NETWORK_CHANGED),
+    // -100 to -199 (connection errors), -105 (NAME_NOT_RESOLVED), -106 (INTERNET_DISCONNECTED)
+    const isNetworkError = (
+      errorCode === -2 ||   // FAILED
+      errorCode === -7 ||   // TIMED_OUT
+      errorCode === -21 ||  // NETWORK_CHANGED
+      errorCode === -105 || // NAME_NOT_RESOLVED
+      errorCode === -106 || // INTERNET_DISCONNECTED
+      (errorCode >= -199 && errorCode <= -100) // Connection errors
+    );
 
-  // Open links with default browser
-  ipcMain.on('open-external-link', (event, url) => {
-    console.log('open-external-link: ', url);
-    shell.openExternal(url);
-  });
-
-  // Listen for network status updates from the renderer process
-  ipcMain.on('network-status', (event, isOnline) => {
-    console.log(`Network status: ${isOnline ? 'online' : 'offline'}`);
-    console.log("network-status changed: " + isOnline);
-    if (isOnline) {
-      win.loadURL(appURL);
+    if (isNetworkError) {
+      wasOffline = true;
+      win.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
     } else {
-      win.loadFile('./assets/html/offline.html');
+      console.log(`did-fail-load: Non-network error ${errorCode}, not showing offline page`);
     }
   });
 
-  //win.loadFile(join(__dirname, 'index.html'));
-  win.loadURL(appURL);
+  // Intercept navigation and only allow app + auth hosts in-app
+  win.webContents.on('will-navigate', (event, url) => {
+    try {
+      const parsedUrl = new URL(url);
+      const protocol = parsedUrl.protocol;
+      const targetHost = parsedUrl.host;
 
-  // Link clicks open new windows, let's force them to open links in
-  // the default browser
+      // Only allow http/https navigations to known hosts
+      if ((protocol !== 'http:' && protocol !== 'https:') || !allowedHosts.has(targetHost)) {
+        console.log('will-navigate external: ', url);
+        event.preventDefault();
+        // Only open http/https URLs externally for security
+        if (protocol === 'http:' || protocol === 'https:') {
+          shell.openExternal(url).catch(err => {
+            console.error('Failed to open external URL:', err);
+          });
+        }
+      }
+    } catch (e) {
+      // If URL parsing fails, block the navigation to avoid crashes
+      console.log('will-navigate invalid URL: ', url, e);
+      event.preventDefault();
+    }
+  });
+
+  // New-window requests (window.open / target="_blank"): only keep the
+  // app host in-app; everything else opens in the default browser
   win.webContents.setWindowOpenHandler(({url}) => {
     console.log('windowOpenHandler: ', url);
-    shell.openExternal(url);
-    return { action: 'deny' }
+    try {
+      const parsedUrl = new URL(url);
+      const protocol = parsedUrl.protocol;
+      const host = parsedUrl.host;
+      
+      if (host === new URL(appURL).host) {
+        win.loadURL(url);
+        return { action: 'deny' };
+      }
+
+      // Only open http/https URLs externally for security
+      if (protocol === 'http:' || protocol === 'https:') {
+        shell.openExternal(url).catch(err => {
+          console.error('Failed to open external URL:', err);
+        });
+      }
+    } catch (e) {
+      // If URL parsing fails, just deny the action
+      console.log('windowOpenHandler: invalid URL', url, e);
+    }
+    return { action: 'deny' };
   });
+
+  win.loadURL(appURL);
 
   win.webContents.on('before-input-event', (event, input) => {
     if (input.control && input.key.toLowerCase() === 'r') {
@@ -134,7 +256,13 @@ if (!firstInstance) {
 } else {
   app.on("second-instance", (event) => {
     console.log("second-instance");
-    win.show();
+    if (!win) {
+      createWindow();
+    }
+    if (win) {
+      win.show();
+      win.focus();
+    }
   });
 }
 
@@ -144,9 +272,9 @@ function createAboutWindow() {
 
   const aboutWindow = new BrowserWindow({
     width: 500,
-    height: 300,
+    height: 420,
     x: x + ((width - 500) / 2),
-    y: y + ((height - 500) / 2),
+    y: y + ((height - 420) / 2),
     title: 'About',
     webPreferences: {
       nodeIntegration: true,

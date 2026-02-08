@@ -1,12 +1,44 @@
 const { ipcRenderer } = require('electron');
+const { allowedHosts } = require('./constants');
 
-// List for DOMContentLoaded event
+// Network status detection
+function updateNetworkStatus() {
+    ipcRenderer.send('network-status', navigator.onLine);
+}
+
+window.addEventListener('online', updateNetworkStatus);
+window.addEventListener('offline', updateNetworkStatus);
+// Don't call updateNetworkStatus() immediately to avoid reload loops
+// Only send status on actual online/offline events
+
+// Listen for DOMContentLoaded event
 window.addEventListener('DOMContentLoaded', () => {
-    // Listen for click events and fire open-external-link as needed
+    // Wire up retry button on offline page
+    const retryBtn = document.getElementById('retry-btn');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', () => {
+            ipcRenderer.send('retry-connection');
+        });
+    }
+
+    // Listen for click events and open non-allowed links externally
     document.addEventListener('click', (event) => {
-        if (event.target.tagName === 'A' && event.target.href.startsWith('http')) {
+        const target = event.target;
+        if (!(target instanceof Element)) {
+            return;
+        }
+        const link = target.closest('a');
+        if (link && link.href && link.href.startsWith('http')) {
+            try {
+                const host = new URL(link.href).host;
+                if (allowedHosts.has(host)) {
+                    return; // Allow app + auth links to navigate in-app
+                }
+            } catch (e) {
+                // If URL parsing fails, open externally as a safety measure
+            }
             event.preventDefault();
-            ipcRenderer.send('open-external-link', event.target.href);
+            ipcRenderer.send('open-external-link', link.href);
         }
     });
 });
