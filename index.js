@@ -66,8 +66,39 @@ ipcMain.on('log-message', (event, message) => {
 // Open links with default browser
 ipcMain.on('open-external-link', (event, url) => {
   console.log('open-external-link: ', url);
-  if (url) {
-    shell.openExternal(url);
+  if (!url) {
+    return;
+  }
+
+  // Validate the sender origin for security
+  const senderURL = event.senderFrame.url;
+  const isOfflinePage = senderURL.startsWith('file://') && senderURL.includes('offline.html');
+  const isAllowedHost = (() => {
+    try {
+      const host = new URL(senderURL).host;
+      return allowedHosts.has(host);
+    } catch {
+      return false;
+    }
+  })();
+
+  if (!isOfflinePage && !isAllowedHost) {
+    console.log('open-external-link: rejected from untrusted origin', senderURL);
+    return;
+  }
+
+  // Only allow http: and https: protocols for security
+  try {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      console.log('open-external-link: rejected non-http(s) protocol', parsedUrl.protocol);
+      return;
+    }
+    shell.openExternal(url).catch(err => {
+      console.error('Failed to open external URL:', err);
+    });
+  } catch (e) {
+    console.log('open-external-link: invalid URL', url, e);
   }
 });
 
@@ -133,8 +164,25 @@ function createWindow () {
     if (validatedURL && !validatedURL.startsWith(appURL)) {
       return;
     }
-    wasOffline = true;
-    win.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
+
+    // Only treat network-related errors as "offline"
+    // Common network error codes: -2 (FAILED), -7 (TIMED_OUT), -21 (NETWORK_CHANGED),
+    // -100 to -199 (connection errors), -105 (NAME_NOT_RESOLVED), -106 (INTERNET_DISCONNECTED)
+    const isNetworkError = (
+      errorCode === -2 ||   // FAILED
+      errorCode === -7 ||   // TIMED_OUT
+      errorCode === -21 ||  // NETWORK_CHANGED
+      errorCode === -105 || // NAME_NOT_RESOLVED
+      errorCode === -106 || // INTERNET_DISCONNECTED
+      (errorCode <= -100 && errorCode >= -199) // Connection errors
+    );
+
+    if (isNetworkError) {
+      wasOffline = true;
+      win.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
+    } else {
+      console.log(`did-fail-load: Non-network error ${errorCode}, not showing offline page`);
+    }
   });
 
   // Intercept navigation and only allow app + auth hosts in-app
@@ -148,7 +196,12 @@ function createWindow () {
       if ((protocol !== 'http:' && protocol !== 'https:') || !allowedHosts.has(targetHost)) {
         console.log('will-navigate external: ', url);
         event.preventDefault();
-        shell.openExternal(url);
+        // Only open http/https URLs externally for security
+        if (protocol === 'http:' || protocol === 'https:') {
+          shell.openExternal(url).catch(err => {
+            console.error('Failed to open external URL:', err);
+          });
+        }
       }
     } catch (e) {
       // If URL parsing fails, block the navigation to avoid crashes
@@ -162,15 +215,25 @@ function createWindow () {
   win.webContents.setWindowOpenHandler(({url}) => {
     console.log('windowOpenHandler: ', url);
     try {
-      const host = new URL(url).host;
+      const parsedUrl = new URL(url);
+      const protocol = parsedUrl.protocol;
+      const host = parsedUrl.host;
+      
       if (host === new URL(appURL).host) {
         win.loadURL(url);
         return { action: 'deny' };
       }
+
+      // Only open http/https URLs externally for security
+      if (protocol === 'http:' || protocol === 'https:') {
+        shell.openExternal(url).catch(err => {
+          console.error('Failed to open external URL:', err);
+        });
+      }
     } catch (e) {
-      // If URL parsing fails, open externally
+      // If URL parsing fails, just deny the action
+      console.log('windowOpenHandler: invalid URL', url, e);
     }
-    shell.openExternal(url);
     return { action: 'deny' }
   });
 
