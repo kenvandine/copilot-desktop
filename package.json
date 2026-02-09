@@ -8,7 +8,7 @@
     "start": "electron .",
     "start-tray": "electron . --tray",
     "build": "electron-builder --publish never",
-    "screenshot": "electron screenshot.js"
+    "screenshot": "TEST_SCREENSHOT=1 electron ."
   },
   "build": {
     "asar": false,
