@@ -1,5 +1,5 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut} = require('electron');
-const { join } = require('path');
+const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut, dialog } = require('electron');
+const { join, dirname } = require('path');
 const fs = require('fs');
 const { allowedHosts } = require('./constants');
 
@@ -15,6 +15,10 @@ const snapPath = process.env.SNAP
 const snapUserData = process.env.SNAP_USER_DATA
 const isScreenshotMode = process.env.TEST_SCREENSHOT === '1';
 const screenshotPath = process.env.SCREENSHOT_PATH || 'screenshot.png';
+let federatedLoginStrategy = process.env.FEDERATED_LOGIN_STRATEGY || 'prompt';
+global.federatedLoginStrategy = federatedLoginStrategy;
+let pendingFederatedInternalNavigation = null;
+let federatedLoginPromptInProgress = false;
 
 function initializeAutostart() {
   if (fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
@@ -145,6 +149,7 @@ function createWindow () {
       sandbox: false
     }
   });
+  // win.webContents.openDevTools({ mode: 'detach' }); // Open DevTools for debugging
 
   win.removeMenu();
 
@@ -203,14 +208,24 @@ function createWindow () {
   });
 
   // Intercept navigation and only allow app + auth hosts in-app
-  win.webContents.on('will-navigate', (event, url) => {
+  win.webContents.on('will-navigate', async (event, url) => {
     try {
+      if (pendingFederatedInternalNavigation === url) {
+        pendingFederatedInternalNavigation = null;
+        return;
+      }
+
       const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol;
       const targetHost = parsedUrl.host;
+      const isLoginRequest = isFederatedMicrosoftLogin(parsedUrl);
+
+      if (isLoginRequest && await handleFederatedLoginNavigation(event, url, parsedUrl)) {
+        return;
+      }
 
       // Only allow http/https navigations to known hosts
-      if ((protocol !== 'http:' && protocol !== 'https:') || !allowedHosts.has(targetHost)) {
+      if ((protocol !== 'http:' && protocol !== 'https:') || (!allowedHosts.has(targetHost) && !isLoginRequest)) {
         console.log('will-navigate external: ', url);
         event.preventDefault();
         // Only open http/https URLs externally for security
@@ -301,6 +316,174 @@ if (!firstInstance) {
   });
 }
 
+function isFederatedMicrosoftLogin(inputUrl) {
+  try {
+    const parsedUrl = inputUrl instanceof URL ? inputUrl : new URL(String(inputUrl || ''));
+    const realm = parsedUrl.searchParams.get('wtrealm');
+
+    return realm === 'urn:federation:MicrosoftOnline';
+  } catch {
+    // Fallback for malformed URLs where parsing fails.
+    const raw = String(inputUrl || '');
+    return raw.includes('wtrealm=urn:federation:MicrosoftOnline') || raw.includes('wtrealm=urn%3Afederation%3AMicrosoftOnline');
+  }
+}
+
+function resolveFederatedLoginStrategy() {
+  const configured = String(global.federatedLoginStrategy || federatedLoginStrategy || 'prompt').toLowerCase();
+  if (configured === 'browser' || configured === 'electron') {
+    federatedLoginStrategy = configured;
+    return configured;
+  }
+
+  if (configured === 'prompt') {
+    federatedLoginStrategy = 'prompt';
+    return 'prompt';
+  }
+
+  console.log(`Unknown federatedLoginStrategy "${configured}", falling back to "prompt"`);
+  federatedLoginStrategy = 'prompt';
+  global.federatedLoginStrategy = 'prompt';
+  return 'prompt';
+}
+
+function handleFederatedLoginInternal(url) {
+  console.log('will-navigate federated login: electron strategy (in-app)', url);
+}
+
+function handleFederatedLoginExternal(event, url, protocol) {
+  console.log('will-navigate federated login: browser strategy (external)', url);
+  event.preventDefault();
+
+  if (protocol === 'http:' || protocol === 'https:') {
+    shell.openExternal(url).catch(err => {
+      console.error('Failed to open external federated login URL:', err);
+    });
+  }
+}
+
+function getFederatedLoginSettingsPath() {
+  return join(app.getPath('userData'), 'federated-login-settings.json');
+}
+
+function saveFederatedLoginStrategy(strategy) {
+  try {
+    const settingsPath = getFederatedLoginSettingsPath();
+    fs.mkdirSync(dirname(settingsPath), { recursive: true });
+    fs.writeFileSync(settingsPath, JSON.stringify({ federatedLoginStrategy: strategy }, null, 2));
+  } catch (error) {
+    console.error('Failed to save federated login settings:', error);
+  }
+}
+
+function loadFederatedLoginStrategy() {
+  try {
+    if (process.env.FEDERATED_LOGIN_STRATEGY) {
+      return;
+    }
+
+    const settingsPath = getFederatedLoginSettingsPath();
+    if (!fs.existsSync(settingsPath)) {
+      return;
+    }
+
+    const settingsRaw = fs.readFileSync(settingsPath, 'utf8');
+    const settings = JSON.parse(settingsRaw);
+    const strategy = settings && settings.federatedLoginStrategy;
+    if (strategy === 'electron' || strategy === 'browser') {
+      federatedLoginStrategy = strategy;
+      global.federatedLoginStrategy = strategy;
+      console.log(`Loaded federated login strategy from settings: ${strategy}`);
+    }
+  } catch (error) {
+    console.error('Failed to load federated login settings:', error);
+  }
+}
+
+function handleResetLoginStrategy() {
+  federatedLoginStrategy = 'prompt';
+  global.federatedLoginStrategy = 'prompt';
+
+  try {
+    const settingsPath = getFederatedLoginSettingsPath();
+    if (fs.existsSync(settingsPath)) {
+      fs.rmSync(settingsPath);
+    }
+  } catch (error) {
+    console.error('Failed to reset federated login settings:', error);
+  }
+
+  console.log('Federated login strategy reset to prompt');
+}
+
+async function promptFederatedLoginChoice() {
+  const result = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: ['Continue in Application', 'Open in Browser'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: 'Organizational login detected',
+    // message: 'Organizational login detected.',
+    detail: 'This login can be redirected to an external identity provider.',
+    checkboxLabel: 'Save this choice for future organizational logins',
+    checkboxChecked: false
+  });
+
+  return {
+    strategy: result.response === 1 ? 'browser' : 'electron',
+    saveChoice: result.checkboxChecked
+  };
+}
+
+async function handleFederatedLoginNavigation(event, url, parsedUrl) {
+  const strategy = resolveFederatedLoginStrategy();
+
+  if (strategy === 'browser') {
+    handleFederatedLoginExternal(event, url, parsedUrl.protocol);
+    return true;
+  }
+
+  if (strategy === 'electron') {
+    handleFederatedLoginInternal(url);
+    return true;
+  }
+
+  if (federatedLoginPromptInProgress) {
+    event.preventDefault();
+    return true;
+  }
+
+  federatedLoginPromptInProgress = true;
+  event.preventDefault();
+
+  try {
+    const { strategy: selectedStrategy, saveChoice } = await promptFederatedLoginChoice();
+
+    if (saveChoice) {
+      federatedLoginStrategy = selectedStrategy;
+      global.federatedLoginStrategy = selectedStrategy;
+      saveFederatedLoginStrategy(selectedStrategy);
+    }
+
+    if (selectedStrategy === 'browser') {
+      handleFederatedLoginExternal(event, url, parsedUrl.protocol);
+    } else {
+      handleFederatedLoginInternal(url);
+      pendingFederatedInternalNavigation = url;
+      win.loadURL(url);
+    }
+  } catch (error) {
+    console.error('Failed to show federated login prompt:', error);
+    pendingFederatedInternalNavigation = url;
+    win.loadURL(url);
+  } finally {
+    federatedLoginPromptInProgress = false;
+  }
+
+  return true;
+}
+
 function createAboutWindow() {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { x, y, width, height } = primaryDisplay.bounds;
@@ -374,6 +557,8 @@ app.on('ready', () => {
   console.log(`Electron Version: ${process.versions.electron}`);
   console.log(`App Version: ${app.getVersion()}`);
 
+  loadFederatedLoginStrategy();
+
   if (!isScreenshotMode) {
     // Register global shortcut  Alt+H
     const ret = globalShortcut.register(showHideShortcut, () => {
@@ -417,6 +602,13 @@ app.on('ready', () => {
           handleAutoStartChange();
           // We need to setContextMenu to get the state changed for checked
           tray.setContextMenu(contextMenu);
+        }
+      },
+      {
+        label: 'Reset login',
+        click: () => {
+          console.log('Reset login clicked');
+          handleResetLoginStrategy();
         }
       },
       { type: 'separator' },
