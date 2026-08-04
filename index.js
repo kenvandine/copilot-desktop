@@ -1,7 +1,8 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut} = require('electron');
-const { join } = require('path');
+const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut, session } = require('electron');
+const { join, dirname } = require('path');
 const fs = require('fs');
 const { allowedHosts } = require('./constants');
+const { isFederatedIdentityProviderLogin } = require('./login-logic');
 
 let showHideShortcut = 'Alt+H'
 let tray = null;
@@ -15,6 +16,294 @@ const snapPath = process.env.SNAP
 const snapUserData = process.env.SNAP_USER_DATA
 const isScreenshotMode = process.env.TEST_SCREENSHOT === '1';
 const screenshotPath = process.env.SCREENSHOT_PATH || 'screenshot.png';
+const persistentSessionPartition = 'persist:copilot-desktop';
+const sessionStorageSnapshotsFile = 'session-storage-snapshots.json';
+const cookiesSnapshotFile = 'cookies-snapshot.json';
+const lastAppLocationFile = 'last-app-location.json';
+let allowInitialSessionRestore = true;
+let allowStartupAuthPromptBypass = true;
+
+function getSessionStorageSnapshotsPath() {
+  return join(app.getPath('userData'), sessionStorageSnapshotsFile);
+}
+
+function getLastAppLocationPath() {
+  return join(app.getPath('userData'), lastAppLocationFile);
+}
+
+function hasPersistedSessionArtifacts() {
+  return fs.existsSync(getCookiesSnapshotPath()) || fs.existsSync(getSessionStorageSnapshotsPath());
+}
+
+function isTrustedAllowedHostURL(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && allowedHosts.has(parsed.host);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeMicrosoftLoginURL(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    const isMicrosoftLoginHost = parsed.host === 'login.microsoftonline.com' || parsed.host === 'login.live.com';
+    if (!isMicrosoftLoginHost) {
+      return null;
+    }
+
+    const prompt = parsed.searchParams.get('prompt');
+    if (prompt !== 'select_account') {
+      return null;
+    }
+
+    if (!allowStartupAuthPromptBypass || !hasPersistedSessionArtifacts()) {
+      return null;
+    }
+
+    parsed.searchParams.delete('prompt');
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeMicrosoftLoginRequest(rawUrl) {
+  const normalized = normalizeMicrosoftLoginURL(rawUrl);
+  if (normalized && normalized !== rawUrl) {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const isMicrosoftLoginHost = parsed.host === 'login.microsoftonline.com' || parsed.host === 'login.live.com';
+    if (!allowStartupAuthPromptBypass || !isMicrosoftLoginHost || !hasPersistedSessionArtifacts()) {
+      return null;
+    }
+
+    if (parsed.searchParams.get('prompt') === 'login') {
+      parsed.searchParams.delete('prompt');
+      return parsed.toString();
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function stripForcedPromptFromNestedValue(value) {
+  if (typeof value !== 'string' || !value) {
+    return value;
+  }
+
+  const stripPlain = (input) => input
+    .replace(/([?&])prompt=select_account(&|$)/ig, '$1')
+    .replace(/([?&])prompt=login(&|$)/ig, '$1')
+    .replace(/[?&]$/, '')
+    .replace(/[?&]{2,}/g, '&')
+    .replace('?&', '?');
+
+  let updated = stripPlain(value);
+
+  try {
+    const decoded = decodeURIComponent(value);
+    const strippedDecoded = stripPlain(decoded);
+    if (strippedDecoded !== decoded) {
+      updated = encodeURIComponent(strippedDecoded);
+    }
+  } catch {
+    // Keep best-effort plain replacement result.
+  }
+
+  return updated;
+}
+
+function normalizeMicrosoftLoginRequestDeep(rawUrl) {
+  const direct = normalizeMicrosoftLoginRequest(rawUrl);
+  if (direct && direct !== rawUrl) {
+    return direct;
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const isMicrosoftLoginHost = parsed.host === 'login.microsoftonline.com' || parsed.host === 'login.live.com';
+    if (!allowStartupAuthPromptBypass || !isMicrosoftLoginHost || !hasPersistedSessionArtifacts()) {
+      return null;
+    }
+
+    let changed = false;
+    parsed.searchParams.forEach((value, key) => {
+      const updated = stripForcedPromptFromNestedValue(value);
+      if (updated !== value) {
+        parsed.searchParams.set(key, updated);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      return parsed.toString();
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function getCookiesSnapshotPath() {
+  return join(app.getPath('userData'), cookiesSnapshotFile);
+}
+
+function loadCookiesSnapshot() {
+  try {
+    const snapshotPath = getCookiesSnapshotPath();
+    if (!fs.existsSync(snapshotPath)) {
+      return [];
+    }
+
+    const raw = fs.readFileSync(snapshotPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed;
+  } catch (error) {
+    console.error('Failed to load cookies snapshot:', error);
+    return [];
+  }
+}
+
+function saveCookiesSnapshot(cookies) {
+  try {
+    const snapshotPath = getCookiesSnapshotPath();
+    fs.mkdirSync(dirname(snapshotPath), { recursive: true });
+    fs.writeFileSync(snapshotPath, JSON.stringify(cookies, null, 2));
+  } catch (error) {
+    console.error('Failed to save cookies snapshot:', error);
+  }
+}
+
+function cookieToURL(cookie) {
+  const protocol = cookie.secure ? 'https://' : 'http://';
+  const normalizedDomain = cookie.domain && cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+  const path = cookie.path || '/';
+  return `${protocol}${normalizedDomain}${path}`;
+}
+
+async function captureCookiesSnapshot() {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const cookies = await win.webContents.session.cookies.get({});
+    saveCookiesSnapshot(cookies);
+    console.log(`Captured ${cookies.length} cookies for restart persistence`);
+  } catch (error) {
+    console.error('Failed to capture cookies snapshot:', error);
+  }
+}
+
+async function restoreCookiesSnapshot() {
+  try {
+    const snapshot = loadCookiesSnapshot();
+    if (!snapshot.length) {
+      return;
+    }
+
+    const targetSession = session.fromPartition(persistentSessionPartition);
+    for (const cookie of snapshot) {
+      try {
+        const details = {
+          url: cookieToURL(cookie),
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: cookie.secure,
+          httpOnly: cookie.httpOnly,
+          sameSite: cookie.sameSite
+        };
+
+        if (typeof cookie.expirationDate === 'number') {
+          details.expirationDate = cookie.expirationDate;
+        }
+
+        await targetSession.cookies.set(details);
+      } catch (error) {
+        const cookieName = cookie && cookie.name ? cookie.name : 'unknown';
+        console.log(`Skipping cookie restore for ${cookieName}:`, error.message || error);
+      }
+    }
+
+    await targetSession.cookies.flushStore();
+    console.log(`Restored ${snapshot.length} cookies from snapshot`);
+  } catch (error) {
+    console.error('Failed to restore cookies snapshot:', error);
+  }
+}
+
+async function persistSessionData() {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  try {
+    await captureCookiesSnapshot();
+    const { session } = win.webContents;
+    await session.flushStorageData();
+    await session.cookies.flushStore();
+    console.log('Session data flushed successfully');
+  } catch (error) {
+    console.error('Failed to flush session data:', error);
+  }
+}
+
+async function clearPersistentSessionData() {
+  if (!win || win.isDestroyed()) {
+    return;
+  }
+
+  try {
+    const { session } = win.webContents;
+    const cookies = await session.cookies.get({});
+
+    await Promise.all(cookies.map((cookie) => {
+      const protocol = cookie.secure ? 'https://' : 'http://';
+      const normalizedDomain = cookie.domain.startsWith('.') ? cookie.domain.slice(1) : cookie.domain;
+      const cookieUrl = `${protocol}${normalizedDomain}${cookie.path}`;
+      return session.cookies.remove(cookieUrl, cookie.name);
+    }));
+
+    await session.clearStorageData();
+    await session.clearCache();
+    await session.flushStorageData();
+
+    const snapshotsPath = getSessionStorageSnapshotsPath();
+    if (fs.existsSync(snapshotsPath)) {
+      fs.rmSync(snapshotsPath);
+    }
+
+    const cookiesSnapshotPath = getCookiesSnapshotPath();
+    if (fs.existsSync(cookiesSnapshotPath)) {
+      fs.rmSync(cookiesSnapshotPath);
+    }
+
+    const lastLocationPath = getLastAppLocationPath();
+    if (fs.existsSync(lastLocationPath)) {
+      fs.rmSync(lastLocationPath);
+    }
+
+    console.log('Persistent session data cleared successfully');
+
+    wasOffline = false;
+    win.loadURL(appURL);
+  } catch (error) {
+    console.error('Failed to clear persistent session data:', error);
+  }
+}
 
 function initializeAutostart() {
   if (fs.existsSync(snapUserData + '/.config/autostart/copilot-desktop.desktop')) {
@@ -63,6 +352,25 @@ ipcMain.on('zoom-reset', () => {
 
 ipcMain.on('log-message', (event, message) => {
   console.log('Log from preload: ', message);
+});
+
+ipcMain.on('persistency-get-user-data-path-sync', (event) => {
+  event.returnValue = app.getPath('userData');
+});
+
+ipcMain.on('persistency-consume-initial-restore-sync', (event) => {
+  if (!isTrustedAllowedHostURL(event.senderFrame.url)) {
+    event.returnValue = false;
+    return;
+  }
+
+  if (!allowInitialSessionRestore) {
+    event.returnValue = false;
+    return;
+  }
+
+  allowInitialSessionRestore = false;
+  event.returnValue = true;
 });
 
 // Open links with default browser
@@ -124,6 +432,54 @@ ipcMain.on('network-status', (event, isOnline) => {
   }
 });
 
+function addUrlChangeLogging(webContents) {
+  let lastMainFrameUrl = '';
+
+  const logUrlChange = (eventName, nextUrl, details = '') => {
+    if (!nextUrl || nextUrl === lastMainFrameUrl) {
+      return;
+    }
+
+    const previousUrl = lastMainFrameUrl || '(initial)';
+    const detailText = details ? ` ${details}` : '';
+    console.log(`[url-change] ${eventName}: ${previousUrl} -> ${nextUrl}${detailText}`);
+    lastMainFrameUrl = nextUrl;
+  };
+
+  webContents.on('did-start-navigation', (event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('did-start-navigation', url, isInPlace ? '(in-page)' : '');
+  });
+
+  webContents.on('will-redirect', (event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('will-redirect', url, isInPlace ? '(in-page)' : '(redirect)');
+  });
+
+  webContents.on('did-redirect-navigation', (event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('did-redirect-navigation', url, isInPlace ? '(in-page)' : '(redirect)');
+  });
+
+  webContents.on('did-navigate', (event, url, httpResponseCode, httpStatusText) => {
+    const status = httpResponseCode ? `(${httpResponseCode}${httpStatusText ? ` ${httpStatusText}` : ''})` : '';
+    logUrlChange('did-navigate', url, status);
+  });
+
+  webContents.on('did-navigate-in-page', (event, url, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('did-navigate-in-page', url, '(in-page)');
+  });
+}
+
 function createWindow () {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { x, y, width, height } = primaryDisplay.bounds;
@@ -139,17 +495,35 @@ function createWindow () {
     icon: icon,
     show: isScreenshotMode ? false : !isTray, // Start hidden if --tray or screenshot mode
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+      preload: join(__dirname, 'persistence-preload.js'),
+      partition: persistentSessionPartition,
       nodeIntegration: true,
       contextIsolation: true,
       sandbox: false
     }
   });
+  // win.webContents.openDevTools({ mode: 'detach' }); // Open DevTools for debugging
 
   win.removeMenu();
 
+  win.webContents.session.webRequest.onBeforeRequest({
+    urls: [
+      'https://login.microsoftonline.com/*',
+      'https://login.live.com/*'
+    ]
+  }, (details, callback) => {
+    const normalizedLoginUrl = normalizeMicrosoftLoginRequestDeep(details.url);
+    if (normalizedLoginUrl && normalizedLoginUrl !== details.url) {
+      console.log('onBeforeRequest: redirecting login request without forced account prompt');
+      callback({ redirectURL: normalizedLoginUrl });
+      return;
+    }
+
+    callback({ cancel: false });
+  });
+
   win.on('close', (event) => {
-    if (isScreenshotMode) return;
+    if (isScreenshotMode || app.isQuittingForSessionPersist) return;
     event.preventDefault();
     win.hide();
   });
@@ -205,9 +579,27 @@ function createWindow () {
   // Intercept navigation and only allow app + auth hosts in-app
   win.webContents.on('will-navigate', (event, url) => {
     try {
+      const normalizedLoginUrl = normalizeMicrosoftLoginURL(url);
+      if (normalizedLoginUrl && normalizedLoginUrl !== url) {
+        console.log('will-navigate: retrying login without forced account chooser');
+        event.preventDefault();
+        win.loadURL(normalizedLoginUrl);
+        return;
+      }
+
       const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol;
       const targetHost = parsedUrl.host;
+      const isLoginRequest = isFederatedIdentityProviderLogin(parsedUrl);
+
+      if (isLoginRequest) {
+        // Organizational/federated logins (Microsoft WS-Federation, Google,
+        // Apple) must complete inside this webContents session for the login
+        // cookies/state to be usable by the app. Keep the navigation in-app
+        // regardless of host allowlist.
+        console.log('will-navigate federated login: keeping in-app', url);
+        return;
+      }
 
       // Only allow http/https navigations to known hosts
       if ((protocol !== 'http:' && protocol !== 'https:') || !allowedHosts.has(targetHost)) {
@@ -232,11 +624,17 @@ function createWindow () {
   win.webContents.setWindowOpenHandler(({url}) => {
     console.log('windowOpenHandler: ', url);
     try {
+      const normalizedLoginUrl = normalizeMicrosoftLoginURL(url);
+      if (normalizedLoginUrl && normalizedLoginUrl !== url) {
+        win.loadURL(normalizedLoginUrl);
+        return { action: 'deny' };
+      }
+
       const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol;
       const host = parsedUrl.host;
       
-      if (host === new URL(appURL).host) {
+      if (host === new URL(appURL).host || isFederatedIdentityProviderLogin(parsedUrl)) {
         win.loadURL(url);
         return { action: 'deny' };
       }
@@ -255,6 +653,11 @@ function createWindow () {
   });
 
   win.loadURL(appURL);
+
+  // Disable startup-only auth prompt bypass after the first loaded page.
+  win.webContents.once('did-finish-load', () => {
+    allowStartupAuthPromptBypass = false;
+  });
 
   win.webContents.on('did-finish-load', () => {
     if (isScreenshotMode) {
@@ -370,9 +773,11 @@ ipcMain.on('get-app-metadata', (event) => {
 // the app runs in a Wayland session.
 app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal')
 
-app.on('ready', () => {
+app.on('ready', async () => {
   console.log(`Electron Version: ${process.versions.electron}`);
   console.log(`App Version: ${app.getVersion()}`);
+
+  await restoreCookiesSnapshot();
 
   if (!isScreenshotMode) {
     // Register global shortcut  Alt+H
@@ -419,17 +824,24 @@ app.on('ready', () => {
           tray.setContextMenu(contextMenu);
         }
       },
+      {
+        label: 'Clear persistent data',
+        click: () => {
+          console.log('Clear persistent data clicked');
+          clearPersistentSessionData();
+        }
+      },
       { type: 'separator' },
       { label: 'About',
         click: () => {
           console.log("About clicked");
-	  createAboutWindow();
+      createAboutWindow();
         }
       },
       { label: 'Quit',
         click: () => {
           console.log("Quit clicked, Exiting");
-          app.exit();
+          app.quit();
         }
       },
     ]);
@@ -438,7 +850,9 @@ app.on('ready', () => {
     tray.setContextMenu(contextMenu);
   }
 
-  createWindow();
+  if (!win || win.isDestroyed()) {
+    createWindow();
+  }
 });
 
 function showOrHide() {
@@ -449,6 +863,17 @@ function showOrHide() {
     win.show();
   }
 }
+
+app.on('before-quit', async (event) => {
+  if (app.isQuittingForSessionPersist) {
+    return;
+  }
+
+  app.isQuittingForSessionPersist = true;
+  event.preventDefault();
+  await persistSessionData();
+  app.quit();
+});
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
