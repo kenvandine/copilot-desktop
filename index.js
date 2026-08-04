@@ -49,6 +49,68 @@ function getWindowFromWebContents(webContents) {
   return BrowserWindow.fromWebContents(webContents) || getAnyWindow();
 }
 
+function setOfflineBanner(targetWindow, isOffline) {
+  if (!targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  const script = `(() => {
+    const bannerId = 'copilot-desktop-offline-banner';
+    let banner = document.getElementById(bannerId);
+
+    if (${isOffline ? 'true' : 'false'}) {
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = bannerId;
+        banner.style.position = 'fixed';
+        banner.style.top = '0';
+        banner.style.left = '0';
+        banner.style.right = '0';
+        banner.style.zIndex = '2147483647';
+        banner.style.padding = '10px 14px';
+        banner.style.background = '#b42318';
+        banner.style.color = '#ffffff';
+        banner.style.fontFamily = 'sans-serif';
+        banner.style.fontSize = '13px';
+        banner.style.fontWeight = '600';
+        banner.style.textAlign = 'center';
+        banner.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.2)';
+        banner.style.pointerEvents = 'none';
+        banner.textContent = 'You are offline. We will reconnect automatically when network returns.';
+        document.documentElement.appendChild(banner);
+      }
+      return;
+    }
+
+    if (banner) {
+      banner.remove();
+    }
+  })();`;
+
+  targetWindow.webContents.executeJavaScript(script).catch(() => {
+    // Best effort visual indicator.
+  });
+}
+
+function applyOfflineState(isOffline, sourceWindow = null) {
+  wasOffline = isOffline;
+
+  const windowsToUpdate = Array.from(appWindows.values())
+    .filter((existingWindow) => !existingWindow.isDestroyed());
+
+  if (sourceWindow && !sourceWindow.isDestroyed()) {
+    setOfflineBanner(sourceWindow, isOffline);
+  }
+
+  windowsToUpdate.forEach((existingWindow) => {
+    if (sourceWindow && existingWindow === sourceWindow) {
+      return;
+    }
+
+    setOfflineBanner(existingWindow, isOffline);
+  });
+}
+
 function focusWindow(targetWindow) {
   if (!targetWindow || targetWindow.isDestroyed()) {
     return;
@@ -857,11 +919,13 @@ ipcMain.on('open-external-link', (event, url) => {
 // Retry connection from offline page
 ipcMain.on('retry-connection', () => {
   console.log('Retrying connection...');
-  wasOffline = false;
   const targetWindow = getAnyWindow();
-  if (targetWindow) {
-    targetWindow.loadURL(appURL);
+  if (!targetWindow) {
+    return;
   }
+
+  // Preserve session by avoiding navigation; only update current offline indicator.
+  setOfflineBanner(targetWindow, wasOffline);
 });
 
 // Listen for network status updates from the preload script
@@ -873,13 +937,7 @@ ipcMain.on('network-status', (event, isOnline) => {
     return;
   }
 
-  if (isOnline && wasOffline) {
-    wasOffline = false;
-    targetWindow.loadURL(appURL);
-  } else if (!isOnline && !wasOffline) {
-    wasOffline = true;
-    targetWindow.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
-  }
+  applyOfflineState(!isOnline, targetWindow);
 });
 
 function addUrlChangeLogging(webContents) {
@@ -1036,7 +1094,7 @@ function createWindow (options = {}) {
     currentWindow.hide();
   });
 
-  // Show offline page if the *main* app URL fails to load due to a real network error
+  // Keep the current page/session alive when offline; use in-app banner instead of navigation.
   currentWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     console.log(`did-fail-load: ${errorDescription} (${errorCode}) on ${validatedURL}, mainFrame=${isMainFrame}`);
 
@@ -1045,7 +1103,7 @@ function createWindow (options = {}) {
       return;
     }
 
-    // Only trigger offline page for failures related to the main app URL
+    // Only treat failures on the app URL as connectivity state changes.
     if (validatedURL && !validatedURL.startsWith(appURL)) {
       return;
     }
@@ -1077,10 +1135,9 @@ function createWindow (options = {}) {
     }
 
     if (isNetworkError) {
-      wasOffline = true;
-      currentWindow.loadFile(join(__dirname, 'assets', 'html', 'offline.html'));
+      applyOfflineState(true, currentWindow);
     } else {
-      console.log(`did-fail-load: Non-network error ${errorCode}, not showing offline page`);
+      console.log(`did-fail-load: Non-network error ${errorCode}, not applying offline mode`);
     }
   });
 
@@ -1179,6 +1236,12 @@ function createWindow (options = {}) {
   });
 
   currentWindow.webContents.on('did-finish-load', () => {
+    // The banner is DOM-based and may be removed by page navigations.
+    // Re-apply it after each load while offline.
+    if (wasOffline) {
+      setOfflineBanner(currentWindow, true);
+    }
+
     if (isScreenshotMode) {
       console.log('Screenshot mode: waiting 5 seconds for content to render...');
       setTimeout(async () => {
