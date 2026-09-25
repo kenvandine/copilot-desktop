@@ -140,13 +140,23 @@ function createWindow () {
     show: isScreenshotMode ? false : !isTray, // Start hidden if --tray or screenshot mode
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
-      nodeIntegration: true,
+      nodeIntegration: false,
       contextIsolation: true,
-      sandbox: false
+      sandbox: true
     }
   });
 
   win.removeMenu();
+
+  // Enforce a Content Security Policy to mitigate XSS from the remote content
+  win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': ["default-src 'self' https://*.microsoft.com https://*.live.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.microsoft.com https://*.live.com; style-src 'self' 'unsafe-inline' https://*.microsoft.com; img-src 'self' data: https:; connect-src 'self' https://*.microsoft.com https://*.live.com wss://*.microsoft.com; frame-src https://*.microsoft.com https://*.live.com; object-src 'none'"]
+      }
+    });
+  });
 
   win.on('close', (event) => {
     if (isScreenshotMode) return;
