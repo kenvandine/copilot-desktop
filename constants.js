@@ -7,6 +7,12 @@ const allowedHosts = new Set([
     'copilot.microsoft.com',
     'login.microsoftonline.com',
     'login.live.com',
+    'www.microsoft.com',
+    'microsoft.com',
+    'account.microsoft.com',
+    'teams.microsoft.com',
+    'www.google.com',
+    'google.com',
 ]);
 
 module.exports = {
