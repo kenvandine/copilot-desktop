@@ -11,7 +11,7 @@ description: |
 adopt-info: copilot-desktop
 grade: stable
 confinement: strict
-base: core24
+base: core24-2404
 contact: https://github.com/kenvandine/copilot-desktop/issues
 issues: https://github.com/kenvandine/copilot-desktop/issues
 website: https://github.com/kenvandine/copilot-desktop
@@ -69,7 +69,7 @@ parts:
     override-prime: |
         set -eux
         cd /snap/gnome-46-2404/current
-        find . -type f,l -exec rm -f $SNAPCRAFT_PRIME/{} \;
+        find . -type f,l -exec rm -f $SNAPCRAFT_PRIME/{} \
 
 plugs:
   shmem:
