@@ -75,6 +75,8 @@ plugs:
   shmem:
     interface: shared-memory
     private: true
+  clipboard:
+    interface: clipboard
 
 apps:
   copilot-desktop:
@@ -89,10 +91,12 @@ apps:
       - network
       - shmem
       - unity7
+      - clipboard
     environment:
       GTK_USE_PORTAL: 1
       TMPDIR: $XDG_RUNTIME_DIR
       HOME: $SNAP_REAL_HOME
+      QT_QPA_PLATFORM: xcb
   daemon:
     extensions: [gnome]
     daemon: simple
@@ -106,7 +110,9 @@ apps:
       - home
       - network
       - shmem
+      - clipboard
     environment:
       GTK_USE_PORTAL: 0
       HOME: $SNAP_REAL_HOME
       DISABLE_WAYLAND: 1
+      QT_QPA_PLATFORM: xcb
