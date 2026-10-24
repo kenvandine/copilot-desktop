@@ -69,7 +69,7 @@ parts:
     override-prime: |
         set -eux
         cd /snap/gnome-46-2404/current
-        find . -type f,l -exec rm -f $SNAPCRAFT_PRIME/{} \;
+        find . -type f,l -exec rm -f $SNAPCRAFT_PRIME/{} \
 
 plugs:
   shmem:
@@ -110,3 +110,6 @@ apps:
       GTK_USE_PORTAL: 0
       HOME: $SNAP_REAL_HOME
       DISABLE_WAYLAND: 1
+      WEBKIT_DISABLE_DMABUF_RENDERER: 1
+      WEBKIT_GTK_USE_EGL: 1
+
