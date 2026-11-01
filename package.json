@@ -1,41 +1,30 @@
 {
   "name": "copilot-desktop",
-  "title": "Copilot Desktop",
   "version": "@@VERSION@@",
-  "description": "Unofficial Web app for Microsoft Copilot providing the desktop user experience you would expect on Ubuntu or any other Linux desktop.",
+  "description": "Unofficial Web app for Microsoft Copilot providing the desktop user experience you would expect on Ubuntu or any other Linux desktop",
   "main": "index.js",
   "scripts": {
     "start": "electron .",
-    "start-tray": "electron . --tray",
-    "build": "electron-builder --publish never",
-    "screenshot": "TEST_SCREENSHOT=1 electron ."
+    "build": "electron-builder",
+    "dist": "electron-builder --linux",
+    "postinstall": "electron-builder install-app-deps"
   },
-  "build": {
-    "asar": false,
-    "linux": {
-      "target": [
-	      "dir"
-      ],
-      "category": "Utility",
-      "artifactName": "${name}_${version}_linux.${ext}"
-    },
-    "extraFiles": [
-      "com.github.kenvandine.${name}.desktop"
-    ]
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/kenvandine/copilot-desktop.git"
-  },
-  "author": "Ken VanDine",
-  "license": "GPL-3.0",
-  "bugs": {
-    "url": "https://github.com/kenvandine/copilot-desktop/issues"
-  },
-  "homepage": "https://github.com/kenvandine/copilot-desktop#readme",
+  "keywords": [
+    "electron",
+    "copilot",
+    "microsoft",
+    "ai",
+    "chatgpt",
+    "gemini"
+  ],
+  "author": "kenvandine",
+  "license": "GPL-3.0+",
   "devDependencies": {
-    "electron": "^40.2.1",
-    "electron-builder": "^26.7.0",
-    "electron-package": "^0.1.0"
+    "electron": "^32.1.0",
+    "electron-builder": "^24.13.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.1.7",
+    "node-abi": "^3.65.0"
   }
 }
