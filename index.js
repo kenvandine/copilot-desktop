@@ -1,7 +1,8 @@
-const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut} = require('electron');
-const { join } = require('path');
+const { app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell , globalShortcut } = require('electron');
+const { join, dirname } = require('path');
 const fs = require('fs');
 const { allowedHosts } = require('./constants');
+const { isFederatedIdentityProviderLogin } = require('./login-logic');
 
 let showHideShortcut = 'Alt+H'
 let tray = null;
@@ -124,6 +125,54 @@ ipcMain.on('network-status', (event, isOnline) => {
   }
 });
 
+function addUrlChangeLogging(webContents) {
+  let lastMainFrameUrl = '';
+
+  const logUrlChange = (eventName, nextUrl, details = '') => {
+    if (!nextUrl || nextUrl === lastMainFrameUrl) {
+      return;
+    }
+
+    const previousUrl = lastMainFrameUrl || '(initial)';
+    const detailText = details ? ` ${details}` : '';
+    console.log(`[url-change] ${eventName}: ${previousUrl} -> ${nextUrl}${detailText}`);
+    lastMainFrameUrl = nextUrl;
+  };
+
+  webContents.on('did-start-navigation', (event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('did-start-navigation', url, isInPlace ? '(in-page)' : '');
+  });
+
+  webContents.on('will-redirect', (event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('will-redirect', url, isInPlace ? '(in-page)' : '(redirect)');
+  });
+
+  webContents.on('did-redirect-navigation', (event, url, isInPlace, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('did-redirect-navigation', url, isInPlace ? '(in-page)' : '(redirect)');
+  });
+
+  webContents.on('did-navigate', (event, url, httpResponseCode, httpStatusText) => {
+    const status = httpResponseCode ? `(${httpResponseCode}${httpStatusText ? ` ${httpStatusText}` : ''})` : '';
+    logUrlChange('did-navigate', url, status);
+  });
+
+  webContents.on('did-navigate-in-page', (event, url, isMainFrame) => {
+    if (!isMainFrame) {
+      return;
+    }
+    logUrlChange('did-navigate-in-page', url, '(in-page)');
+  });
+}
+
 function createWindow () {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { x, y, width, height } = primaryDisplay.bounds;
@@ -145,8 +194,10 @@ function createWindow () {
       sandbox: false
     }
   });
+  // win.webContents.openDevTools({ mode: 'detach' }); // Open DevTools for debugging
 
   win.removeMenu();
+  addUrlChangeLogging(win.webContents);
 
   win.on('close', (event) => {
     if (isScreenshotMode) return;
@@ -208,6 +259,16 @@ function createWindow () {
       const parsedUrl = new URL(url);
       const protocol = parsedUrl.protocol;
       const targetHost = parsedUrl.host;
+      const isLoginRequest = isFederatedIdentityProviderLogin(parsedUrl);
+
+      if (isLoginRequest) {
+        // Organizational/federated logins (Microsoft WS-Federation, Google,
+        // Apple) must complete inside this webContents session for the login
+        // cookies/state to be usable by the app. Keep the navigation in-app
+        // regardless of host allowlist.
+        console.log('will-navigate federated login: keeping in-app', url);
+        return;
+      }
 
       // Only allow http/https navigations to known hosts
       if ((protocol !== 'http:' && protocol !== 'https:') || !allowedHosts.has(targetHost)) {
@@ -236,7 +297,7 @@ function createWindow () {
       const protocol = parsedUrl.protocol;
       const host = parsedUrl.host;
       
-      if (host === new URL(appURL).host) {
+      if (host === new URL(appURL).host || isFederatedIdentityProviderLogin(parsedUrl)) {
         win.loadURL(url);
         return { action: 'deny' };
       }
@@ -423,7 +484,7 @@ app.on('ready', () => {
       { label: 'About',
         click: () => {
           console.log("About clicked");
-	  createAboutWindow();
+      createAboutWindow();
         }
       },
       { label: 'Quit',
@@ -438,7 +499,9 @@ app.on('ready', () => {
     tray.setContextMenu(contextMenu);
   }
 
-  createWindow();
+  if (!win || win.isDestroyed()) {
+    createWindow();
+  }
 });
 
 function showOrHide() {
